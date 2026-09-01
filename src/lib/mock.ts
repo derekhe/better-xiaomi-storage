@@ -26,11 +26,14 @@ export const mockPhotos: Photo[] = urls.map((id, index) => {
     : new Date(2025 - (index - 16) * 3, 7 - (index - 16), 30 - index);
   return {
     member_id: `mock-${index}`,
-    path: `/照片/IMG_20260${String(index + 1).padStart(2, '0')}.jpg`,
+    path: index === 1 ? '/照片/VID_20260002.mp4' : `/照片/IMG_20260${String(index + 1).padStart(2, '0')}.jpg`,
     size: String(2_400_000 + index * 73_000),
     modify_time: String(demoDate.getTime()),
     shot_time: String(demoDate.getTime()),
     location: index % 3 === 0 ? '云南省 大理市' : '',
     mockUrl: `https://images.unsplash.com/${id}?auto=format&fit=crop&w=900&q=82`,
+    mockMediaUrl: index === 1
+      ? 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
+      : undefined,
   };
 });

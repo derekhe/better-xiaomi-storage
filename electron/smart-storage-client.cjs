@@ -7,6 +7,7 @@ const { X509Certificate } = require('node:crypto');
 const TOKEN_PATH = '/cgi-bin/luci/plugincenter/get_access_token';
 const ALBUM_ROOT = '/cgi-bin/luci/album';
 const THUMBNAIL_PATH = '/cgi-bin/luci/filemgr/get_thumbnail';
+const POOL_INFO_PATH = '/cgi-bin/luci/filemgr/get_pool_info';
 
 function extractPortCandidatesFromText(text) {
   const matches = [];
@@ -26,6 +27,39 @@ function extractPortCandidatesFromText(text) {
   }
 
   return [...new Map(matches.sort((a, b) => b.index - a.index).map((item) => [item.port, item])).keys()];
+}
+
+function extractPortMappingsFromText(text) {
+  const matches = [];
+  const patterns = [
+    /["']?urlport["']?\s*[:=]\s*["']?(\d{4,5})["']?[^}\r\n]{0,400}?["']?webdavport["']?\s*[:=]\s*["']?(\d{4,5})/gi,
+    /urlport=(\d{4,5})[^\r\n]{0,250}?webdavport=(\d{4,5})/gi,
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const apiPort = Number(match[1]);
+      const webDavPort = Number(match[2]);
+      if (apiPort > 1024 && apiPort < 65536 && webDavPort > 1024 && webDavPort < 65536) {
+        matches.push({ apiPort, webDavPort, index: match.index });
+      }
+    }
+  }
+
+  return [...new Map(matches
+    .sort((a, b) => b.index - a.index)
+    .map((item) => [`${item.apiPort}:${item.webDavPort}`, item])).values()];
+}
+
+function buildWebDavPath(photoPath, aliasRoot = '') {
+  const normalizedPath = String(photoPath || '').replace(/\\/g, '/');
+  const normalizedRoot = String(aliasRoot || '').replace(/\\/g, '/').replace(/\/$/, '');
+  const relativePath = normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)
+    ? normalizedPath.slice(normalizedRoot.length)
+    : normalizedPath;
+  const absolutePath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
+  return absolutePath.split('/').map((segment) => encodeURIComponent(segment)).join('/');
 }
 
 function readTail(filePath, maxBytes = 2 * 1024 * 1024) {
@@ -70,6 +104,8 @@ class SmartStorageClient {
     this.documentsPath = documentsPath || path.join(process.env.USERPROFILE || '', 'Documents');
     this.localAppData = localAppData;
     this.port = null;
+    this.webDavPort = null;
+    this.webDavConfig = null;
     this.agent = null;
     this.certificate = null;
     this.connectPromise = null;
@@ -145,6 +181,26 @@ class SmartStorageClient {
     return candidates;
   }
 
+  findPortMappings() {
+    const logDirectory = path.join(this.documentsPath, 'mijiaNas', 'log');
+    if (!fs.existsSync(logDirectory)) return [];
+    const logs = fs
+      .readdirSync(logDirectory)
+      .filter((name) => /^(?:app|request)-.*\.log$/i.test(name))
+      .map((name) => ({ path: path.join(logDirectory, name), mtime: fs.statSync(path.join(logDirectory, name)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, 4);
+    const mappings = [];
+    for (const log of logs) {
+      for (const mapping of extractPortMappingsFromText(readTail(log.path))) {
+        if (!mappings.some((item) => item.apiPort === mapping.apiPort && item.webDavPort === mapping.webDavPort)) {
+          mappings.push(mapping);
+        }
+      }
+    }
+    return mappings;
+  }
+
   rawRequest(port, requestPath, data, { responseType = 'json', timeout = 8000, maxBytes } = {}) {
     return new Promise((resolve, reject) => {
       const body = Buffer.from(JSON.stringify(data ?? {}));
@@ -207,9 +263,15 @@ class SmartStorageClient {
     if (!force && this.port && this.agent) return this.port;
     if (!force && this.connectPromise) return this.connectPromise;
     this.connectPromise = (async () => {
+      if (force) {
+        this.port = null;
+        this.webDavPort = null;
+        this.webDavConfig = null;
+      }
       this.certificate = this.findCertificate();
       this.agent = this.createAgent(this.certificate);
       const candidates = this.findPortCandidates();
+      const mappings = this.findPortMappings();
       if (!candidates.length) {
         throw new Error('未找到设备通道，请先打开官方客户端并进入一次相册');
       }
@@ -218,6 +280,7 @@ class SmartStorageClient {
           const result = await this.rawRequest(port, TOKEN_PATH, {}, { timeout: 1200 });
           if (result?.code === 0 && result?.data?.token) {
             this.port = port;
+            this.webDavPort = mappings.find((mapping) => mapping.apiPort === port)?.webDavPort || port + 1;
             return port;
           }
         } catch {
@@ -305,6 +368,77 @@ class SmartStorageClient {
       throw error;
     }
   }
+
+  async getWebDavConfig() {
+    if (this.webDavConfig) return this.webDavConfig;
+    const response = await this.requestJson(POOL_INFO_PATH, {});
+    const webDav = response?.data?.webDAV;
+    if (!webDav?.username || !webDav?.password || !webDav?.alias_root) {
+      throw new Error('设备没有返回可用的媒体读取配置');
+    }
+    this.webDavConfig = {
+      username: String(webDav.username),
+      password: String(webDav.password),
+      aliasRoot: String(webDav.alias_root),
+    };
+    return this.webDavConfig;
+  }
+
+  async openMediaStream({ photoPath, range, retry = true }) {
+    await this.connect();
+    const config = await this.getWebDavConfig();
+    const requestPath = buildWebDavPath(photoPath, config.aliasRoot);
+    const ports = [...new Set([this.webDavPort, this.port ? this.port + 1 : null].filter(Boolean))];
+    let lastError;
+
+    for (const port of ports) {
+      try {
+        const response = await new Promise((resolve, reject) => {
+          const headers = {
+            Authorization: `Basic ${Buffer.from(`${config.username}:${config.password}`).toString('base64')}`,
+            'Accept-Encoding': 'identity',
+            'User-Agent': 'BetterXiaomiStorage/0.1 (Windows)',
+          };
+          if (range) headers.Range = range;
+          const request = https.request(
+            {
+              hostname: '127.0.0.1',
+              port,
+              path: requestPath,
+              method: 'GET',
+              agent: this.agent,
+              timeout: 30000,
+              headers,
+            },
+            resolve,
+          );
+          request.on('timeout', () => request.destroy(new Error('读取媒体文件超时')));
+          request.on('error', reject);
+          request.end();
+        });
+        if ([200, 206, 416].includes(response.statusCode)) {
+          this.webDavPort = port;
+          return response;
+        }
+        response.resume();
+        throw new Error(`设备返回 HTTP ${response.statusCode}`);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (retry) {
+      await this.connect({ force: true });
+      return this.openMediaStream({ photoPath, range, retry: false });
+    }
+    throw lastError || new Error('无法读取媒体文件');
+  }
 }
 
-module.exports = { SmartStorageClient, extractPortCandidatesFromText, parseStreamPhotoList };
+module.exports = {
+  SmartStorageClient,
+  buildWebDavPath,
+  extractPortCandidatesFromText,
+  extractPortMappingsFromText,
+  parseStreamPhotoList,
+};

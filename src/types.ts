@@ -26,6 +26,7 @@ export interface Photo {
   longitude?: string;
   location?: string;
   mockUrl?: string;
+  mockMediaUrl?: string;
 }
 
 export interface SmartStorageApi {
@@ -34,6 +35,7 @@ export interface SmartStorageApi {
   listPhotos(params: { albumId: string; offset?: string; count?: number }): Promise<Photo[]>;
   listPhotoIndex(params: { albumId: string }): Promise<Photo[]>;
   getThumbnail(params: { photoPath: string; quality?: 'small' | 'preview' }): Promise<string>;
+  getMediaUrl(params: { photoPath: string }): Promise<string>;
   reconnect(): Promise<ConnectionStatus>;
 }
 

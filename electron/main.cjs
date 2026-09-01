@@ -1,10 +1,57 @@
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { randomUUID } = require('node:crypto');
+const { Readable } = require('node:stream');
+const { app, BrowserWindow, ipcMain, protocol } = require('electron');
 const { SmartStorageClient } = require('./smart-storage-client.cjs');
 
 let client;
 let mainWindow;
+const mediaSources = new Map();
 const DEVELOPMENT_URL = 'http://127.0.0.1:5173/';
+const mediaTypes = new Map([
+  ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.png', 'image/png'], ['.gif', 'image/gif'],
+  ['.webp', 'image/webp'], ['.heic', 'image/heic'], ['.mp4', 'video/mp4'], ['.m4v', 'video/mp4'],
+  ['.mov', 'video/quicktime'], ['.webm', 'video/webm'], ['.mkv', 'video/x-matroska'], ['.avi', 'video/x-msvideo'],
+  ['.3gp', 'video/3gpp'], ['.mpg', 'video/mpeg'], ['.mpeg', 'video/mpeg'], ['.vob', 'video/mpeg'],
+]);
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'better-xiaomi-storage',
+    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true },
+  },
+]);
+
+function registerMediaProtocol() {
+  protocol.handle('better-xiaomi-storage', async (request) => {
+    const url = new URL(request.url);
+    if (url.hostname !== 'media' || request.method !== 'GET') {
+      return new Response('Not found', { status: 404 });
+    }
+    const photoPath = mediaSources.get(url.pathname.slice(1));
+    if (!photoPath) return new Response('Media link expired', { status: 404 });
+    const range = request.headers.get('range');
+    if (range && !/^bytes=\d*-\d*$/.test(range)) {
+      return new Response('Invalid range', { status: 416 });
+    }
+
+    try {
+      const upstream = await client.openMediaStream({ photoPath, range });
+      const headers = new Headers();
+      for (const name of ['accept-ranges', 'content-length', 'content-range', 'content-type', 'etag', 'last-modified']) {
+        const value = upstream.headers[name];
+        if (value) headers.set(name, Array.isArray(value) ? value.join(', ') : String(value));
+      }
+      if (!headers.get('content-type') || headers.get('content-type') === 'application/octet-stream') {
+        headers.set('content-type', mediaTypes.get(path.extname(photoPath).toLowerCase()) || 'application/octet-stream');
+      }
+      headers.set('cache-control', 'private, max-age=3600');
+      return new Response(Readable.toWeb(upstream), { status: upstream.statusCode, headers });
+    } catch (error) {
+      return new Response(error instanceof Error ? error.message : 'Media unavailable', { status: 502 });
+    }
+  });
+}
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -68,10 +115,19 @@ function registerIpc() {
     const quality = params.quality === 'preview' ? 'preview' : 'small';
     return client.getThumbnail({ photoPath, quality });
   });
+  handle('smart-storage:get-media-url', (params = {}) => {
+    const photoPath = String(params.photoPath || '');
+    if (!photoPath || photoPath.length > 4096) throw new Error('媒体路径无效');
+    const token = randomUUID();
+    mediaSources.set(token, photoPath);
+    if (mediaSources.size > 200) mediaSources.delete(mediaSources.keys().next().value);
+    return `better-xiaomi-storage://media/${token}`;
+  });
 }
 
 app.whenReady().then(() => {
   client = new SmartStorageClient({ documentsPath: app.getPath('documents') });
+  registerMediaProtocol();
   registerIpc();
   createWindow();
   app.on('activate', () => {

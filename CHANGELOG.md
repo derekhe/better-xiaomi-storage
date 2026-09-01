@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.1 - 2026-09-01
+
+- Open photos in a full-screen, fit-to-window original image viewer.
+- Play videos with native controls and range-based seeking.
+- Show clear video badges in the gallery and fall back to a large preview for unsupported image formats.
+
+---
+
+- 点击照片后以全屏、适应窗口的方式查看原图。
+- 使用原生播放器播放视频，并支持基于字节范围的进度跳转。
+- 在相册中显示视频标识；不受支持的图片格式自动回退到大尺寸预览图。
+
 ## 0.1.0 - 2026-09-01
 
 - Browse Xiaomi Smart Storage photos in a fast, read-only desktop gallery.

@@ -2,7 +2,12 @@ import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
-const { extractPortCandidatesFromText, parseStreamPhotoList } = require('./smart-storage-client.cjs');
+const {
+  buildWebDavPath,
+  extractPortCandidatesFromText,
+  extractPortMappingsFromText,
+  parseStreamPhotoList,
+} = require('./smart-storage-client.cjs');
 
 describe('P2P port discovery', () => {
   it('prefers the latest port and removes duplicates', () => {
@@ -12,6 +17,24 @@ describe('P2P port discovery', () => {
       'port=42001 hasToken=true',
     ].join('\n');
     expect(extractPortCandidatesFromText(log)).toEqual([42001, 41001]);
+  });
+
+  it('keeps the WebDAV port paired with its API tunnel', () => {
+    const log = [
+      'p2pport={"urlport":"41001","webdavport":"41002"}',
+      'p2pport={"urlport":42001,"webdavport":42002,"webport":42003}',
+    ].join('\n');
+    expect(extractPortMappingsFromText(log)).toEqual([
+      { apiPort: 42001, webDavPort: 42002, index: expect.any(Number) },
+      { apiPort: 41001, webDavPort: 41002, index: expect.any(Number) },
+    ]);
+  });
+});
+
+describe('WebDAV media paths', () => {
+  it('removes the alias root and safely encodes every path segment', () => {
+    expect(buildWebDavPath('/用户目录/照片/旅行 2026/海边#1.jpg', '/用户目录'))
+      .toBe('/%E7%85%A7%E7%89%87/%E6%97%85%E8%A1%8C%202026/%E6%B5%B7%E8%BE%B9%231.jpg');
   });
 });
 

@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { ImageOff } from 'lucide-react';
+import { ImageOff, Play } from 'lucide-react';
 import type { Photo } from '../types';
+import { isVideoPath } from '../lib/media';
 
 interface ThumbnailProps {
   photo: Photo;
@@ -44,6 +45,7 @@ export const Thumbnail = memo(function Thumbnail({ photo, quality = 'small', alt
       {src && !failed ? <img src={src} alt={alt} draggable={false} onError={() => setFailed(true)} /> : null}
       {!src && !failed ? <span className="thumbnail-shimmer" /> : null}
       {failed ? <ImageOff aria-label="缩略图加载失败" size={22} /> : null}
+      {src && !failed && isVideoPath(photo.path) ? <span className="video-badge" aria-label="视频"><Play fill="currentColor" size={18} /></span> : null}
     </div>
   );
 });

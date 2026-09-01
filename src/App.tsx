@@ -5,11 +5,11 @@ import { PhotoDetail } from './components/PhotoDetail';
 import { Thumbnail } from './components/Thumbnail';
 import { TimeNavigator } from './components/TimeNavigator';
 import { groupPhotos, photoDate } from './lib/date';
+import { isVideoPath } from './lib/media';
 import { mockAlbums, mockPhotos } from './lib/mock';
 import type { Album, ConnectionStatus, Photo } from './types';
 
 type MediaFilter = 'all' | 'photo' | 'video';
-const videoExtensions = /\.(mp4|mov|mkv|avi|webm|m4v)$/i;
 
 export default function App() {
   const isMock = !window.smartStorage;
@@ -98,7 +98,7 @@ export default function App() {
     return photos.filter((photo) => {
       const searchableDate = photoDate(photo).toLocaleDateString('zh-CN');
       const matchesQuery = !needle || `${photo.path} ${photo.location || ''} ${searchableDate}`.toLowerCase().includes(needle);
-      const isVideo = videoExtensions.test(photo.path);
+      const isVideo = isVideoPath(photo.path);
       const matchesType = filter === 'all' || (filter === 'video' ? isVideo : !isVideo);
       return matchesQuery && matchesType;
     });
@@ -186,7 +186,7 @@ export default function App() {
   }
 
   return (
-    <div className={`app-shell ${detail ? 'has-detail' : ''}`}>
+    <div className="app-shell">
       <Sidebar albums={albums} selectedAlbum={albumId} onSelectAlbum={selectAlbum} />
       <main className="main-content">
         <header className="topbar">
