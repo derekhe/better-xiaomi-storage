@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { describe, expect, it, vi } from 'vitest';
 const require = createRequire(import.meta.url);
 const { JsonMessages, StandaloneSession, nativeRequest } = require('./standalone-session.cjs');
 const { createDeviceCsr } = require('./device-certificate.cjs');
@@ -43,6 +44,50 @@ describe('native login protocol', () => {
     await new Promise(resolve => hanging.listen(0, '127.0.0.1', resolve));
     try { await expect(nativeRequest({ cmd: 'heart' }, { port: hanging.address().port, timeout: 25 })).rejects.toThrow('超时'); }
     finally { await new Promise(resolve => hanging.close(resolve)); }
+  });
+  it('reports a native authentication rejection without mislabeling the device as offline', async () => {
+    const server = net.createServer(socket => socket.once('data', () => socket.end(JSON.stringify({ code: -401, msg: 'fixture-private-detail' }))));
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      await expect(nativeRequest({ cmd: 'p2pinit' }, { port: server.address().port })).rejects.toThrow('通信认证失败');
+    } finally { await new Promise(resolve => server.close(resolve)); }
+  });
+  it('authenticates every command with the native launch key and rotates it on restart', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'shiguang-ipc-test-'));
+    const servers = vi.spyOn(net, 'createServer').mockImplementation(() => {
+      const server = new EventEmitter();
+      server.listen = (_port, _host, ready) => { server.listening = true; queueMicrotask(ready); };
+      server.close = ready => { server.listening = false; queueMicrotask(ready); };
+      return server;
+    });
+    const requests = [], launches = [];
+    const account = new StandaloneSession({ userData: directory, runtimeSource: '', safeStorage,
+      request: async data => { requests.push(data); return { code: 0 }; },
+      spawnProcess: (_file, _args, options) => {
+        launches.push(options);
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.exitCode = 0;
+        return child;
+      } });
+    account.prepareRuntime = () => ({ version: 'fixture', executable: 'fixture.exe' });
+    try {
+      await account.start();
+      const firstKey = launches[0].env.MI_SSO_IPC_AUTH_KEY;
+      expect(firstKey).toMatch(/^[a-f0-9]{64}$/);
+      for (const cmd of ['heart', 'getUserCertificate', 'p2pinit']) await account.request({ cmd, authKey: 'incorrect-caller-key' });
+      expect(requests.map(item => item.authKey)).toEqual([firstKey, firstKey, firstKey]);
+      expect(JSON.stringify(account.status())).not.toContain(firstKey);
+      account.persist();
+      expect(JSON.stringify(new StandaloneSession({ userData: directory, runtimeSource: '', safeStorage }).session)).not.toContain(firstKey);
+      await account.stop();
+      expect(account.ipcAuthKey).toBe('');
+      await account.start();
+      expect(launches[1].env.MI_SSO_IPC_AUTH_KEY).not.toBe(firstKey);
+      await account.request({ cmd: 'heart' });
+      expect(requests.at(-1).authKey).toBe(launches[1].env.MI_SSO_IPC_AUTH_KEY);
+    } finally {
+      await account.stop(); servers.mockRestore(); fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 });
 

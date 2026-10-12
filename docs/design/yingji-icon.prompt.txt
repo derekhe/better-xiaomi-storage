@@ -1,0 +1,7 @@
+Generated with the built-in image_gen tool. No API credentials were used.
+
+Use case: logo-brand. Asset type: production Windows desktop application icon, a single square 1024x1024 icon for a personal photo gallery and local AI photo organizer named 映集. Primary request: create one beautiful, original, highly polished app icon. Subject: two subtly overlapping photo tiles, their negative space forming a simple luminous landscape/photo symbol, plus one small elegant four-point glint suggesting carefully selected memories. Style: premium soft sculptural icon with restrained depth, clean rounded geometry and excellent legibility at 24px; no fine outlines, no photographic textures. Color palette: warm coral orange #F36B43 through gentle golden apricot, creamy white main photo shape. Composition: straight-on centered rounded-square warm orange tile occupying approximately 88 percent of the canvas, balanced generous margin, bold white photo motif occupying 60 percent of the tile; silhouette completely contained in canvas. Outer canvas fully transparent, real alpha, rounded tile itself opaque. Gentle controlled lighting; no cast shadow outside the tile. Constraints: icon only, no text, no letters, no words, no watermark, no frame or mockup, no extra variants. Avoid camera lens cliches, rainbow gradients, tiny detail, busy sparkles, generic AI robot imagery.
+
+PNG: public/brand/app-icon.png (generated original, RGBA)
+ICO: public/brand/app.ico (16, 24, 32, 48, 64, 128, 256 px)
+ICO conversion only changes the asset format and supplies Windows-required resolutions.

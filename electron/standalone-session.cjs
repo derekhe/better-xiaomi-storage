@@ -49,7 +49,11 @@ function nativeRequest(data, { timeout = 15000, port = COMMAND_PORT } = {}) {
     socket.once('error', () => finish(new Error('登录组件当前不可用')));
     socket.once('close', () => {
       if (settled) return;
-      try { finish(null, JSON.parse(response.toString('utf8'))); }
+      try {
+        const result = JSON.parse(response.toString('utf8'));
+        if (Number(result?.code) === -401) return finish(new Error('登录组件通信认证失败，请重启映集后重试'));
+        finish(null, result);
+      }
       catch { finish(new Error('登录组件返回了无法解析的数据')); }
     });
   });
@@ -60,7 +64,8 @@ class StandaloneSession extends EventEmitter {
     super();
     this.userData = userData; this.runtimeSource = runtimeSource; this.safeStorage = safeStorage;
     this.localAppData = localAppData;
-    this.spawnProcess = spawnProcess; this.request = request;
+    this.spawnProcess = spawnProcess; this.ipcAuthKey = '';
+    this.request = (data, options) => request(this.ipcAuthKey ? { ...data, authKey: this.ipcAuthKey } : data, options);
     this.sessionPath = path.join(userData, 'account.bin');
     this.session = {}; this.child = null; this.server = null; this.sockets = new Set();
     this.state = 'signed-out'; this.message = ''; this.startPromise = null; this.connectPromise = null; this.connection = null;
@@ -161,8 +166,11 @@ class StandaloneSession extends EventEmitter {
     const ua = `MiNasClient/${manifest.version} (pc app; ${encodeURIComponent(os.hostname())}; Windows 10/11 ${os.release()} (x64); ${this.uuid})`;
     const login = this.session.login || {};
     const args = [ua, '0', this.uuid, ...Array.from({ length: 7 }, (_, i) => login[`L${i + 1}`] || '')];
+    // The native component requires the same per-process key in its environment and every command.
+    this.ipcAuthKey = crypto.randomBytes(32).toString('hex');
     const child = this.spawnProcess(path.join(this.runtimePath, manifest.executable), args,
-      { cwd: this.runtimePath, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      { cwd: this.runtimePath, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, MI_SSO_IPC_AUTH_KEY: this.ipcAuthKey } });
     this.child = child;
     child.stdout.on('data', () => {}); child.stderr.on('data', () => {}); // Native output can contain credentials.
     child.once('error', () => { if (this.child === child) { this.change('error', '无法启动登录组件'); void this.stop(); } });
@@ -208,6 +216,7 @@ class StandaloneSession extends EventEmitter {
     }
     const ports = await this.request({ cmd: 'p2pinit', url: 'p2p', param: JSON.stringify({ did, tunnels: [{ type: 'miss', params: { did, model: device.model } }] }) }, { timeout: 45000 });
     check();
+    if (ports?.code !== undefined && Number(ports.code) !== 0) throw new Error(`设备通道建立失败（错误码 ${Number(ports.code)}），请重新连接`);
     const apiPort = Number(ports.urlport), webDavPort = Number(ports.webdavport);
     if (![apiPort, webDavPort].every(port => Number.isInteger(port) && port > 1024 && port < 65536)) throw new Error('设备未返回有效通道，请确认设备在线');
     // Private keys stay encrypted at rest and are passed to HTTPS in main-process memory.
@@ -219,12 +228,13 @@ class StandaloneSession extends EventEmitter {
   async stop() {
     this.generation++;
     clearInterval(this.heartbeat);
+    this.ipcAuthKey = '';
     const child = this.child; this.child = null; this.connection = null;
     if (child && child.exitCode === null && child.signalCode === null) {
       const exited = new Promise(resolve => child.once('exit', resolve));
       if (process.platform === 'win32') await new Promise((resolve, reject) => {
         execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, error => {
-          if (error && child.exitCode === null && child.signalCode === null) reject(new Error('无法关闭登录组件，请退出拾光后重试'));
+          if (error && child.exitCode === null && child.signalCode === null) reject(new Error('无法关闭登录组件，请退出映集后重试'));
           else resolve();
         });
       }); else child.kill();

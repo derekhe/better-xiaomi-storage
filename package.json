@@ -2,7 +2,7 @@
   "name": "better-xiaomi-storage",
   "version": "0.2.0-alpha.1",
   "private": true,
-  "description": "A fast, read-only gallery with integrated Xiaomi Smart Storage login",
+  "description": "映集 — Xiaomi Smart Storage gallery with local AI photo cleanup",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -22,6 +22,7 @@
     "start": "electron .",
     "test": "vitest run",
     "prepare:runtime": "node scripts/prepare-runtime.cjs",
+    "prepare:liqe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-liqe.ps1",
     "package": "npm run build && electron-builder --win nsis --config.electronDist=node_modules/electron/dist"
   },
   "dependencies": {
@@ -46,7 +47,7 @@
   "build": {
     "beforePack": "./scripts/validate-runtime.cjs",
     "appId": "io.github.derekhe.better-xiaomi-storage",
-    "productName": "拾光",
+    "productName": "映集",
     "files": [
       "dist/renderer/**/*",
       "electron/main.cjs",
@@ -54,20 +55,38 @@
       "electron/smart-storage-client.cjs",
       "electron/standalone-session.cjs",
       "electron/device-certificate.cjs",
+      "electron/cleanup-trash.cjs",
+      "electron/cleanup-cache.cjs",
+      "electron/background-analysis.cjs",
+      "electron/analysis-preload.cjs",
+      "electron/liqe.cjs",
+      "electron/liqe_worker.py",
+      "THIRD_PARTY_NOTICES.md",
+      "licenses/**/*",
       "package.json"
     ],
     "extraResources": [
       {
         "from": "vendor/xiaomi-runtime",
         "to": "xiaomi-runtime"
+      },
+      {
+        "from": "vendor/liqe-runtime",
+        "to": "liqe-runtime",
+        "filter": ["**/*", "!Scripts/**", "!pyvenv.cfg", "!share/**", "!.lock", "!*.partial", "!*.download", "!**/__pycache__/**"]
       }
     ],
     "directories": {
       "output": "release"
     },
     "win": {
+      "icon": "public/brand/app.ico",
       "target": "nsis",
       "artifactName": "better-xiaomi-storage-${version}-setup.${ext}"
+    },
+    "nsis": {
+      "installerIcon": "public/brand/app.ico",
+      "uninstallerIcon": "public/brand/app.ico"
     }
   }
 }

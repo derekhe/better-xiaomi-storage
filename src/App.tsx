@@ -1,10 +1,11 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarRange, Check, ChevronDown, Filter, LogOut, RefreshCw, Search, Wifi, WifiOff, X } from 'lucide-react';
 import { AccountPanel } from './components/AccountPanel';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, type SidebarSection } from './components/Sidebar';
 import { PhotoDetail } from './components/PhotoDetail';
 import { Thumbnail } from './components/Thumbnail';
 import { TimeNavigator } from './components/TimeNavigator';
+import { PhotoCleanup } from './components/PhotoCleanup';
 import { groupPhotos, photoDate } from './lib/date';
 import { isVideoPath } from './lib/media';
 import { mockAlbums, mockPhotos } from './lib/mock';
@@ -17,12 +18,15 @@ export default function App() {
   const [account, setAccount] = useState<AccountStatus | null>(null);
   const [accountReady, setAccountReady] = useState(isMock);
   const [status, setStatus] = useState<ConnectionStatus>(
-    isMock ? { connected: true, mode: 'companion' } : { connected: false, mode: 'companion' },
+    isMock ? { connected: true, mode: 'standalone' } : { connected: false, mode: 'standalone' },
   );
   const [albums, setAlbums] = useState<Album[]>(isMock ? mockAlbums : []);
   const [photos, setPhotos] = useState<Photo[]>(isMock ? mockPhotos : []);
   const [albumId, setAlbumId] = useState('1');
+  const [sidebarSection, setSidebarSection] = useState<SidebarSection>('photos');
   const [title, setTitle] = useState('所有照片');
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [cleanupMounted, setCleanupMounted] = useState(false);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const [filter, setFilter] = useState<MediaFilter>('all');
@@ -79,12 +83,13 @@ export default function App() {
 
   useEffect(() => {
     if (account?.state !== 'connected') return;
-    setAlbumId('1'); setTitle('所有照片'); setTimeIndex(null); setDetail(null); setSelected(new Set());
+    setCleanupOpen(false); setCleanupMounted(false);
+    setAlbumId('1'); setSidebarSection('photos'); setTitle('所有照片'); setTimeIndex(null); setDetail(null); setSelected(new Set());
     loadInitial('1');
   }, [account?.state, account?.selectedDeviceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadMore = useCallback(async () => {
-    if (!window.smartStorage || loading || loadingMore || !hasMore || !photos.length) return;
+    if (!window.smartStorage || cleanupOpen || loading || loadingMore || !hasMore || !photos.length) return;
     setLoadingMore(true);
     try {
       const next = await window.smartStorage.listPhotos({
@@ -99,7 +104,7 @@ export default function App() {
     } finally {
       setLoadingMore(false);
     }
-  }, [albumId, hasMore, loading, loadingMore, photos]);
+  }, [albumId, cleanupOpen, hasMore, loading, loadingMore, photos]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -178,8 +183,10 @@ export default function App() {
     setTimeOpen(false);
   }
 
-  function selectAlbum(nextAlbumId: string, nextTitle: string) {
+  function selectAlbum(nextAlbumId: string, nextTitle: string, section: SidebarSection) {
+    setCleanupOpen(false);
     setAlbumId(nextAlbumId);
+    setSidebarSection(section);
     setTitle(nextTitle);
     setDetail(null);
     setSelected(new Set());
@@ -206,7 +213,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar albums={albums} selectedAlbum={albumId} onSelectAlbum={selectAlbum} />
+      <Sidebar albums={albums} selectedAlbum={albumId} selectedSection={sidebarSection} onSelectAlbum={selectAlbum} cleanupActive={cleanupOpen} onCleanup={() => { setCleanupMounted(true); setCleanupOpen(true); setDetail(null); setTimeOpen(false); setFilterOpen(false); }} />
       <main className="main-content">
         <header className="topbar">
           <label className="search-box">
@@ -224,7 +231,7 @@ export default function App() {
           </div>
         </header>
 
-        <section className="gallery-content">
+        <section className="gallery-content" hidden={cleanupOpen}>
           <div className="gallery-heading">
             <div>
               <h1>{selecting && selected.size ? `已选择 ${selected.size} 项` : title}</h1>
@@ -302,6 +309,13 @@ export default function App() {
             </div>
           ) : null}
         </section>
+        {cleanupMounted ? <PhotoCleanup key={account?.selectedDeviceId || 'demo'} active={cleanupOpen} demoPhotos={mockPhotos} onPreview={setDetail} onRemoved={(paths) => {
+          const removed = new Set(paths);
+          setPhotos((current) => current.filter((p) => !removed.has(p.path)));
+          setTimeIndex((current) => current ? current.filter((p) => !removed.has(p.path)) : null);
+          setSelected(new Set());
+          window.smartStorage?.listAlbums().then(setAlbums).catch(() => {});
+        }} /> : null}
       </main>
       {detail ? <PhotoDetail photo={detail} onClose={() => setDetail(null)} /> : null}
     </div>

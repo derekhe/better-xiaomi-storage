@@ -16,7 +16,7 @@ export function AccountPanel({ account, onChange }: { account: AccountStatus; on
   return (
     <main className="account-screen">
       <div className="account-card">
-        <div className="account-brand">拾光<span>把回忆放在眼前</span></div>
+        <div className="account-brand"><img src={`${import.meta.env.BASE_URL}brand/app-icon.png`} alt="" />映集<span>把回忆放在眼前</span></div>
         <div className="account-symbol"><HardDrive size={30} /></div>
         <h1>{signedIn ? '选择你的存储设备' : '连接你的小米智能存储'}</h1>
         <p>{signedIn ? '选择一台设备，开始浏览照片和视频。' : '登录小米账号，直接打开相册，无需另装官方客户端。'}</p>
@@ -39,7 +39,7 @@ export function AccountPanel({ account, onChange }: { account: AccountStatus; on
         {error || account.message ? <p className="account-error" role="alert">{error || account.message}</p> : null}
         {!account.runtimeAvailable ? <p className="account-error">当前安装缺少登录组件，请重新安装完整安装包。</p> : null}
         {signedIn || waiting ? <button className="account-secondary" disabled={busy} onClick={() => perform(() => window.smartStorage!.logout())}><LogOut size={15} />{waiting ? '取消登录 / 连接' : '退出账号，重新登录'}</button> : null}
-        <div className="account-note">登录在小米窗口中完成。拾光只读取设备中的照片和视频。</div>
+        <div className="account-note">登录在小米窗口中完成。照片分析在本机进行，清理需确认后移入设备回收站。</div>
       </div>
     </main>
   );

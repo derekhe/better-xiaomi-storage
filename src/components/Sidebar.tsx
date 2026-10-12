@@ -1,26 +1,35 @@
-import { Clock3, Heart, Image, Settings } from 'lucide-react';
+import { Clock3, Heart, Image, Settings, Sparkles } from 'lucide-react';
 import type { Album } from '../types';
 import { Thumbnail } from './Thumbnail';
+
+export type SidebarSection = 'photos' | 'favorites' | 'recent' | 'album';
 
 interface SidebarProps {
   albums: Album[];
   selectedAlbum: string;
-  onSelectAlbum: (id: string, name: string) => void;
+  selectedSection: SidebarSection;
+  onSelectAlbum: (id: string, name: string, section: SidebarSection) => void;
+  cleanupActive: boolean;
+  onCleanup: () => void;
 }
 
-export function Sidebar({ albums, selectedAlbum, onSelectAlbum }: SidebarProps) {
+export function Sidebar({ albums, selectedAlbum, selectedSection, onSelectAlbum, cleanupActive, onCleanup }: SidebarProps) {
+  const active = (section: SidebarSection) => !cleanupActive && selectedSection === section;
   return (
     <aside className="sidebar">
-      <div className="brand">拾光</div>
+      <div className="brand"><img src={`${import.meta.env.BASE_URL}brand/app-icon.png`} alt="" /><span>映集</span></div>
       <nav className="primary-nav" aria-label="主要导航">
-        <button className={selectedAlbum === '1' ? 'active' : ''} onClick={() => onSelectAlbum('1', '所有照片')}>
+        <button aria-label="照片" aria-current={active('photos') ? 'page' : undefined} className={active('photos') ? 'active' : ''} onClick={() => onSelectAlbum('1', '所有照片', 'photos')}>
           <Image size={20} /><span>照片</span>
         </button>
-        <button onClick={() => onSelectAlbum('2', '收藏')}>
+        <button aria-label="收藏" aria-current={active('favorites') ? 'page' : undefined} className={active('favorites') ? 'active' : ''} onClick={() => onSelectAlbum('2', '收藏', 'favorites')}>
           <Heart size={20} /><span>收藏</span>
         </button>
-        <button onClick={() => onSelectAlbum('1', '最近添加')}>
+        <button aria-label="最近添加" aria-current={active('recent') ? 'page' : undefined} className={active('recent') ? 'active' : ''} onClick={() => onSelectAlbum('1', '最近添加', 'recent')}>
           <Clock3 size={20} /><span>最近添加</span>
+        </button>
+        <button aria-label="照片清理" aria-current={cleanupActive ? 'page' : undefined} className={cleanupActive ? 'active' : ''} onClick={onCleanup}>
+          <Sparkles size={20} /><span>照片清理</span>
         </button>
       </nav>
       <div className="sidebar-divider" />
@@ -33,8 +42,8 @@ export function Sidebar({ albums, selectedAlbum, onSelectAlbum }: SidebarProps) 
           return (
             <button
               key={album.album_uuid}
-              className={selectedAlbum === album.album_uuid ? 'active' : ''}
-              onClick={() => onSelectAlbum(album.album_uuid, album.name || '未命名相册')}
+              className={active('album') && selectedAlbum === album.album_uuid ? 'active' : ''}
+              onClick={() => onSelectAlbum(album.album_uuid, album.name || '未命名相册', 'album')}
             >
               <span className="album-cover">{coverPhoto ? <Thumbnail photo={coverPhoto} /> : <Image size={17} />}</span>
               <span className="album-name">{album.name || '未命名相册'}</span>

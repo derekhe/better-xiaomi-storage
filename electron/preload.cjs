@@ -14,7 +14,21 @@ contextBridge.exposeInMainWorld('smartStorage', {
   listAlbums: () => ipcRenderer.invoke('smart-storage:list-albums'),
   listPhotos: (params) => ipcRenderer.invoke('smart-storage:list-photos', params),
   listPhotoIndex: (params) => ipcRenderer.invoke('smart-storage:list-photo-index', params),
+  loadCleanupCache: () => ipcRenderer.invoke('smart-storage:load-cleanup-cache'),
+  saveCleanupCache: (params) => ipcRenderer.invoke('smart-storage:save-cleanup-cache', params),
+  clearCleanupCache: () => ipcRenderer.invoke('smart-storage:clear-cleanup-cache'),
+  trashPhotos: (params) => ipcRenderer.invoke('smart-storage:trash-photos', params),
   getThumbnail: (params) => ipcRenderer.invoke('smart-storage:get-thumbnail', params),
   getMediaUrl: (params) => ipcRenderer.invoke('smart-storage:get-media-url', params),
   reconnect: () => ipcRenderer.invoke('smart-storage:reconnect'),
+  getAnalysisState: () => ipcRenderer.invoke('smart-storage:analysis-state'),
+  getAnalysisResult: () => ipcRenderer.invoke('smart-storage:analysis-result'),
+  getQualityModelStatus: () => ipcRenderer.invoke('smart-storage:quality-model-status'),
+  startAnalysis: params => ipcRenderer.invoke('smart-storage:start-analysis', params),
+  pauseAnalysis: () => ipcRenderer.invoke('smart-storage:pause-analysis'),
+  onAnalysisChanged: listener => {
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on('smart-storage:analysis-changed', handler);
+    return () => ipcRenderer.removeListener('smart-storage:analysis-changed', handler);
+  },
 });

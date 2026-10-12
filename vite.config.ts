@@ -7,6 +7,7 @@ export default defineConfig({
   build: {
     outDir: 'dist/renderer',
     emptyOutDir: true,
+    rollupOptions: { input: { main: 'index.html', analysis: 'analysis.html' } },
   },
   server: {
     host: '127.0.0.1',

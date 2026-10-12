@@ -76,12 +76,20 @@ function readTail(filePath, maxBytes = 2 * 1024 * 1024) {
 }
 
 function parseStreamPhotoList(text) {
-  return String(text || '')
-    .trim()
-    .split(/\n\s*=\s*\n/)
-    .filter(Boolean)
-    .slice(1)
-    .map((record) => {
+  const records = String(text || '').trim().split(/\r?\n[ \t]*=[ \t]*(?:\r?\n|$)/);
+  const header = new Map();
+  for (const line of records[0].split('\n').filter(value => value.trim())) {
+    const separator = line.indexOf(':');
+    if (separator < 0) throw new Error('设备没有返回有效的照片索引');
+    const key = line.slice(0, separator).trim(), value = line.slice(separator + 1).trim();
+    if (header.has(key)) throw new Error('设备没有返回有效的照片索引');
+    header.set(key, value);
+  }
+  // Current firmware reports a full snapshot revision instead of a code field.
+  const revisionHeader = !!header.get('boot_id') && /^\d+$/.test(header.get('user_change_id') || '') && header.get('delta') === '0';
+  if ((header.has('code') ? header.get('code') !== '0' : !revisionHeader)
+    || (header.has('delta') && header.get('delta') !== '0')) throw new Error('设备没有返回有效的照片索引');
+  return records.slice(1).filter(record => record.trim()).map((record) => {
       const photo = {};
       for (const line of record.split('\n').filter((value) => value.trim())) {
         const separator = line.indexOf(':');
@@ -94,9 +102,9 @@ function parseStreamPhotoList(text) {
         photo[key] = value;
       }
       if (photo.shot_time === '3600000000' && photo.modify_time) photo.shot_time = photo.modify_time;
+      if (!photo.path) throw new Error('设备返回的照片索引不完整，请重新读取');
       return photo;
-    })
-    .filter((photo) => Object.prototype.hasOwnProperty.call(photo, 'path'));
+    });
 }
 
 class SmartStorageClient {
@@ -217,7 +225,7 @@ class SmartStorageClient {
           headers: {
             'Content-Type': 'application/json',
             'Content-Length': body.length,
-            'User-Agent': 'ShiguangGallery/0.1 (Windows)',
+            'User-Agent': 'Yingji/0.2 (Windows)',
           },
         },
         (response) => {
@@ -370,9 +378,9 @@ class SmartStorageClient {
     return parseStreamPhotoList(text);
   }
 
-  async getThumbnail({ photoPath, quality = 'small' }) {
+  async getThumbnail({ photoPath, quality = 'small', refresh = false }) {
     const cacheKey = `${quality}:${photoPath}`;
-    if (this.thumbnailCache.has(cacheKey)) return this.thumbnailCache.get(cacheKey);
+    if (!refresh && this.thumbnailCache.has(cacheKey)) return this.thumbnailCache.get(cacheKey);
     const task = (async () => {
       const port = await this.connect();
       const response = await this.rawRequest(
@@ -390,7 +398,7 @@ class SmartStorageClient {
     try {
       return await task;
     } catch (error) {
-      this.thumbnailCache.delete(cacheKey);
+      if (this.thumbnailCache.get(cacheKey) === task) this.thumbnailCache.delete(cacheKey);
       throw error;
     }
   }
