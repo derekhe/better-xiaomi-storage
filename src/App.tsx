@@ -1,5 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarRange, Check, ChevronDown, Filter, RefreshCw, Search, Wifi, WifiOff, X } from 'lucide-react';
+import { CalendarRange, Check, ChevronDown, Filter, LogOut, RefreshCw, Search, Wifi, WifiOff, X } from 'lucide-react';
+import { AccountPanel } from './components/AccountPanel';
 import { Sidebar } from './components/Sidebar';
 import { PhotoDetail } from './components/PhotoDetail';
 import { Thumbnail } from './components/Thumbnail';
@@ -7,12 +8,14 @@ import { TimeNavigator } from './components/TimeNavigator';
 import { groupPhotos, photoDate } from './lib/date';
 import { isVideoPath } from './lib/media';
 import { mockAlbums, mockPhotos } from './lib/mock';
-import type { Album, ConnectionStatus, Photo } from './types';
+import type { AccountStatus, Album, ConnectionStatus, Photo } from './types';
 
 type MediaFilter = 'all' | 'photo' | 'video';
 
 export default function App() {
   const isMock = !window.smartStorage;
+  const [account, setAccount] = useState<AccountStatus | null>(null);
+  const [accountReady, setAccountReady] = useState(isMock);
   const [status, setStatus] = useState<ConnectionStatus>(
     isMock ? { connected: true, mode: 'companion' } : { connected: false, mode: 'companion' },
   );
@@ -64,8 +67,21 @@ export default function App() {
   }, [albumId]);
 
   useEffect(() => {
+    const api = window.smartStorage;
+    if (!api) return;
+    let active = true;
+    const unsubscribe = api.onAccountChanged(next => { if (active) { setAccount(next); setAccountReady(true); } });
+    api.getAccountStatus().then(next => { if (active) { setAccount(next); setAccountReady(true); } }).catch(() => {
+      if (active) { setAccount({ state: 'error', runtimeAvailable: true, devices: [], message: '无法读取登录状态，请尝试登录' }); setAccountReady(true); }
+    });
+    return () => { active = false; unsubscribe(); };
+  }, []);
+
+  useEffect(() => {
+    if (account?.state !== 'connected') return;
+    setAlbumId('1'); setTitle('所有照片'); setTimeIndex(null); setDetail(null); setSelected(new Set());
     loadInitial('1');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [account?.state, account?.selectedDeviceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadMore = useCallback(async () => {
     if (!window.smartStorage || loading || loadingMore || !hasMore || !photos.length) return;
@@ -185,6 +201,9 @@ export default function App() {
     });
   }
 
+  if (!accountReady) return <main className="account-screen"><p>正在读取登录状态…</p></main>;
+  if (!isMock && account && account.state !== 'connected') return <AccountPanel account={account} onChange={setAccount} />;
+
   return (
     <div className="app-shell">
       <Sidebar albums={albums} selectedAlbum={albumId} onSelectAlbum={selectAlbum} />
@@ -198,6 +217,10 @@ export default function App() {
           <div className={`connection ${status.connected ? 'online' : 'offline'}`}>
             {status.connected ? <Wifi size={18} /> : <WifiOff size={18} />}
             <span>{status.connected ? '已连接' : '未连接'}</span>
+            {!isMock ? <button className="account-logout" aria-label="退出账号或切换设备" title="退出账号或切换设备" onClick={async () => {
+              try { setAccount(await window.smartStorage!.logout()); setPhotos([]); setAlbums([]); setDetail(null); }
+              catch (reason) { setError(reason instanceof Error ? reason.message : '退出账号失败'); }
+            }}><LogOut size={17} /></button> : null}
           </div>
         </header>
 

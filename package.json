@@ -1,8 +1,8 @@
 {
   "name": "better-xiaomi-storage",
-  "version": "0.1.1",
+  "version": "0.2.0-alpha.1",
   "private": true,
-  "description": "A fast, read-only companion gallery for Xiaomi Smart Storage",
+  "description": "A fast, read-only gallery with integrated Xiaomi Smart Storage login",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -21,7 +21,8 @@
     "build": "tsc -b && vite build",
     "start": "electron .",
     "test": "vitest run",
-    "package": "npm run build && electron-builder --win nsis"
+    "prepare:runtime": "node scripts/prepare-runtime.cjs",
+    "package": "npm run build && electron-builder --win nsis --config.electronDist=node_modules/electron/dist"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -43,6 +44,7 @@
     "wait-on": "^8.0.1"
   },
   "build": {
+    "beforePack": "./scripts/validate-runtime.cjs",
     "appId": "io.github.derekhe.better-xiaomi-storage",
     "productName": "拾光",
     "files": [
@@ -50,7 +52,15 @@
       "electron/main.cjs",
       "electron/preload.cjs",
       "electron/smart-storage-client.cjs",
+      "electron/standalone-session.cjs",
+      "electron/device-certificate.cjs",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/xiaomi-runtime",
+        "to": "xiaomi-runtime"
+      }
     ],
     "directories": {
       "output": "release"

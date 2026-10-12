@@ -100,9 +100,10 @@ function parseStreamPhotoList(text) {
 }
 
 class SmartStorageClient {
-  constructor({ documentsPath, localAppData = process.env.LOCALAPPDATA } = {}) {
+  constructor({ documentsPath, localAppData = process.env.LOCALAPPDATA, connectionProvider } = {}) {
     this.documentsPath = documentsPath || path.join(process.env.USERPROFILE || '', 'Documents');
     this.localAppData = localAppData;
+    this.connectionProvider = connectionProvider;
     this.port = null;
     this.webDavPort = null;
     this.webDavConfig = null;
@@ -146,9 +147,9 @@ class SmartStorageClient {
   createAgent(certificate) {
     const expectedHash = crypto.createHash('sha1').update(certificate.did).digest('hex');
     return new https.Agent({
-      cert: fs.readFileSync(certificate.certPath),
-      key: fs.readFileSync(certificate.keyPath),
-      ca: fs.readFileSync(certificate.caPath),
+      cert: certificate.cert || fs.readFileSync(certificate.certPath),
+      key: certificate.key || fs.readFileSync(certificate.keyPath),
+      ca: certificate.ca || fs.readFileSync(certificate.caPath),
       rejectUnauthorized: true,
       keepAlive: true,
       maxSockets: 10,
@@ -263,6 +264,25 @@ class SmartStorageClient {
     if (!force && this.port && this.agent) return this.port;
     if (!force && this.connectPromise) return this.connectPromise;
     this.connectPromise = (async () => {
+      if (this.connectionProvider) {
+        const connection = await this.connectionProvider({ force });
+        this.resetConnection();
+        this.certificate = connection.certificate;
+        this.agent = this.createAgent(this.certificate);
+        for (let attempt = 0; attempt < 30; attempt++) {
+          try {
+            const result = await this.rawRequest(connection.apiPort, TOKEN_PATH, {}, { timeout: 1200 });
+            if (result?.code === 0 && result?.data?.token) {
+              this.port = connection.apiPort; this.webDavPort = connection.webDavPort;
+              return this.port;
+            }
+          } catch (error) {
+            if (!/ECONNREFUSED|ECONNRESET|socket hang up|连接设备超时/.test(error.message)) throw error;
+          }
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        throw new Error('设备通道尚未就绪，请确认设备在线后重试');
+      }
       if (force) {
         this.port = null;
         this.webDavPort = null;
@@ -296,6 +316,12 @@ class SmartStorageClient {
     }
   }
 
+  resetConnection() {
+    this.agent?.destroy(); this.agent = null; this.certificate = null;
+    this.port = null; this.webDavPort = null; this.webDavConfig = null;
+    this.thumbnailCache.clear();
+  }
+
   async requestJson(requestPath, data) {
     const port = await this.connect();
     try {
@@ -315,9 +341,9 @@ class SmartStorageClient {
   async getStatus() {
     try {
       const port = await this.connect();
-      return { connected: true, port, mode: 'companion' };
+      return { connected: true, port, mode: this.connectionProvider ? 'standalone' : 'companion' };
     } catch (error) {
-      return { connected: false, mode: 'companion', message: error.message };
+      return { connected: false, mode: this.connectionProvider ? 'standalone' : 'companion', message: error.message };
     }
   }
 

@@ -1,7 +1,15 @@
 export interface ConnectionStatus {
   connected: boolean;
-  mode: 'companion';
+  mode: 'companion' | 'standalone';
   port?: number;
+  message?: string;
+}
+
+export interface AccountStatus {
+  state: 'signed-out' | 'signing-in' | 'signed-in' | 'connecting' | 'connected' | 'error';
+  runtimeAvailable: boolean;
+  devices: { id: string; name: string; online: boolean }[];
+  selectedDeviceId?: string;
   message?: string;
 }
 
@@ -30,6 +38,11 @@ export interface Photo {
 }
 
 export interface SmartStorageApi {
+  getAccountStatus(): Promise<AccountStatus>;
+  login(): Promise<AccountStatus>;
+  selectDevice(deviceId: string): Promise<AccountStatus>;
+  logout(): Promise<AccountStatus>;
+  onAccountChanged(listener: (status: AccountStatus) => void): () => void;
   getStatus(): Promise<ConnectionStatus>;
   listAlbums(): Promise<Album[]>;
   listPhotos(params: { albumId: string; offset?: string; count?: number }): Promise<Photo[]>;

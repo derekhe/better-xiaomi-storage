@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0-alpha.1 - 2026-10-12
+
+- Add an integrated Xiaomi account login and storage-device selection flow.
+- Manage an independent device tunnel without running the full official client.
+- Add account sign-out and isolated login profiles.
+- Experimental preview: real account login and device access still require validation.
+
+---
+
+- 添加小米账号登录和存储设备选择流程。
+- 独立管理设备连接通道，无需运行完整的官方客户端。
+- 支持退出账号，并使用独立的登录数据目录。
+- 实验预览版：真实账号登录和设备读取仍待验证。
+
 ## 0.1.1 - 2026-09-01
 
 - Open photos in a full-screen, fit-to-window original image viewer.

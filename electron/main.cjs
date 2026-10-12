@@ -1,11 +1,13 @@
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { Readable } = require('node:stream');
-const { app, BrowserWindow, ipcMain, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, safeStorage } = require('electron');
 const { SmartStorageClient } = require('./smart-storage-client.cjs');
+const { StandaloneSession } = require('./standalone-session.cjs');
 
 let client;
 let mainWindow;
+let account;
 const mediaSources = new Map();
 const DEVELOPMENT_URL = 'http://127.0.0.1:5173/';
 const mediaTypes = new Map([
@@ -94,6 +96,20 @@ function registerIpc() {
     });
   };
 
+  handle('smart-storage:account-status', () => account.status());
+  handle('smart-storage:login', () => account.start());
+  handle('smart-storage:select-device', async (deviceId) => {
+    if (typeof deviceId !== 'string' || deviceId.length > 128) throw new Error('设备选择无效');
+    client.resetConnection(); mediaSources.clear();
+    await account.getConnection({ force: true, deviceId });
+    await client.connect();
+    return account.status();
+  });
+  handle('smart-storage:logout', async () => {
+    client.resetConnection(); mediaSources.clear();
+    return account.signOut();
+  });
+
   handle('smart-storage:status', () => client.getStatus());
   handle('smart-storage:reconnect', async () => {
     await client.connect({ force: true });
@@ -126,13 +142,26 @@ function registerIpc() {
 }
 
 app.whenReady().then(() => {
-  client = new SmartStorageClient({ documentsPath: app.getPath('documents') });
+  account = new StandaloneSession({ userData: app.getPath('userData'), safeStorage,
+    runtimeSource: app.isPackaged ? path.join(process.resourcesPath, 'xiaomi-runtime') : path.join(__dirname, '..', 'vendor', 'xiaomi-runtime') });
+  client = new SmartStorageClient({ connectionProvider: options => account.getConnection(options) });
+  account.on('status', status => {
+    if (!['connecting', 'connected'].includes(status.state)) { client.resetConnection(); mediaSources.clear(); }
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('smart-storage:account-changed', status);
+  });
   registerMediaProtocol();
   registerIpc();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+let exiting = false;
+app.on('before-quit', event => {
+  if (!account || exiting) return;
+  event.preventDefault(); exiting = true;
+  client.resetConnection(); account.stop().finally(() => app.quit());
 });
 
 app.on('window-all-closed', () => {
